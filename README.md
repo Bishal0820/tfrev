@@ -109,14 +109,14 @@ See `.tfrev.yaml.example` for all options.
 
   Resources: 4 reviewed  |  +4 create  |  ~0 update  |  -0 delete  |  -/+0 replace
 
-  ID     Severity     Category             Resource                             Title
+  ID     Severity     Category             Resource                                   Title
   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  F001   CRITICAL     security             null_resource.web_sg                 SSH ingress opened to the entire internet (0.0.0.0/0)
-  F002   CRITICAL     security             null_resource.app_db                 RDS database instance set to publicly_accessible=true
-  F003   HIGH         security             null_resource.app_assets_bucket      S3 bucket ACL changed from private to public-read
-  F004   MEDIUM       best_practice        null_resource.app_db                 deletion_protection is false on the database resource
-  F005   MEDIUM       best_practice        null_resource.app_db                 db_instance_class upsized from db.t3.small to db.t3.medium via variable default change
-  F006   LOW          best_practice        general                              All four resources lack lifecycle prevent_destroy protections
+  F001   CRITICAL     security             aws_security_group.web_sg                  SSH ingress opened to the entire internet (0.0.0.0/0)
+  F002   CRITICAL     security             aws_db_instance.app_db                     RDS database instance set to publicly_accessible=true
+  F003   HIGH         security             aws_s3_bucket.app_assets                   S3 bucket ACL changed from private to public-read
+  F004   MEDIUM       best_practice        aws_db_instance.app_db                     deletion_protection is false on the database resource
+  F005   MEDIUM       best_practice        aws_db_instance.app_db                     db_instance_class upsized from db.t3.small to db.t3.medium
+  F006   LOW          best_practice        general                                    All four resources lack lifecycle prevent_destroy protections
 
   ────────────────────────────────────────────────────────────────────────
   [F001] ❗ CRITICAL — SSH ingress opened to the entire internet (0.0.0.0/0)
@@ -125,7 +125,7 @@ See `.tfrev.yaml.example` for all options.
   range) to 0.0.0.0/0, exposing SSH (port 22) to all public IPs.
 
   Code: main.tf (lines 18-19)
-  Plan: null_resource.web_sg (create)
+  Plan: aws_security_group.web_sg (create)
 
   Recommendation:
   Revert ingress_ssh_cidr to a specific, restricted CIDR. Consider using AWS Systems
@@ -155,7 +155,7 @@ tfrev review --plan plan.json --output json      # Machine consumption
 
 ## Cost
 
-Each review is a single Claude API call. Cost scales with the size of your plan and diff.
+Each review is a single Claude API call. Typical cost is $0.01–$0.10 per review depending on plan size and model. If the combined input exceeds the model's context window, tfrev drops context files to fit — it never splits into multiple calls.
 
 ## License
 

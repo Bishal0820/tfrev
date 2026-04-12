@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tfrev"
-version = "1.0.1"
+version = "1.1.0"
 description = "AI-powered Terraform plan reviewer — verify your plan matches your intent before apply"
 readme = "README.md"
 license = "MIT"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["terraform", "infrastructure", "review", "ai", "claude", "devops", "iac"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
     "Programming Language :: Python :: 3",
@@ -29,7 +29,6 @@ classifiers = [
 dependencies = [
     "anthropic>=0.39.0",
     "click>=8.1.0",
-    "httpx>=0.25.0",
     "pyyaml>=6.0",
 ]
 

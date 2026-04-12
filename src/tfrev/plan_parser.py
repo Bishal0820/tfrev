@@ -44,8 +44,6 @@ class PlanSummary:
     deleting: int = 0
     replacing: int = 0
     no_op: int = 0
-    raw_text: str | None = None  # For text-mode plans (non-JSON)
-
     @property
     def has_changes(self) -> bool:
         return (self.creating + self.updating + self.deleting + self.replacing) > 0
@@ -191,10 +189,6 @@ def load_plan_file(path: str | Path) -> PlanSummary:
 
 def format_plan_for_prompt(summary: PlanSummary) -> str:
     """Format a PlanSummary into a human-readable string for the Claude prompt."""
-    # If we have raw text (from --plan-text mode), use it directly
-    if summary.raw_text:
-        return summary.raw_text
-
     lines = []
     lines.append(f"Terraform Version: {summary.terraform_version}")
     lines.append(

@@ -139,16 +139,6 @@ class TestReviewCommand:
         assert result.exit_code == 0
 
     @patch("tfrev.cli.ReviewClient")
-    def test_plan_text_mode(self, mock_client_cls, runner, pass_api_response, mock_git_diff):
-        mock_client_cls.return_value.review.return_value = pass_api_response
-        plan_text = FIXTURES_DIR.parent.parent / "examples" / "local-test" / "main.tf"
-        if not plan_text.exists():
-            pytest.skip("local-test example not available")
-
-        result = runner.invoke(main, ["review", "--plan-text", str(plan_text), "--quiet"])
-        assert result.exit_code == 0
-
-    @patch("tfrev.cli.ReviewClient")
     def test_config_override(self, mock_client_cls, runner, pass_api_response, mock_git_diff):
         mock_client_cls.return_value.review.return_value = pass_api_response
         plan_file = str(FIXTURES_DIR / "plan_minimal.json")
@@ -206,10 +196,12 @@ class TestReviewCommand:
         """When base ref diff is empty, falls back to diffing against the empty tree."""
         mock_client_cls.return_value.review.return_value = pass_api_response
         diff_text = (FIXTURES_DIR / "diff_simple.diff").read_text()
+        git_check = MagicMock(returncode=0, stdout="true", stderr="")
+        detect_branch = MagicMock(returncode=0)  # _detect_default_branch: rev-parse main
         empty = MagicMock(returncode=0, stdout="", stderr="")
         full_state = MagicMock(returncode=0, stdout=diff_text, stderr="")
 
-        with patch("tfrev.cli.subprocess.run", side_effect=[empty, full_state]):
+        with patch("tfrev.cli.subprocess.run", side_effect=[git_check, detect_branch, empty, full_state]):
             plan_file = str(FIXTURES_DIR / "plan_minimal.json")
             result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
         assert result.exit_code == 0
@@ -263,7 +255,9 @@ class TestAutoMode:
         diff_text = (FIXTURES_DIR / "diff_simple.diff").read_text()
         mock_subproc.side_effect = [
             MagicMock(returncode=0, stdout=json.dumps(plan_json), stderr=""),
-            MagicMock(returncode=0, stdout=diff_text, stderr=""),
+            MagicMock(returncode=0, stdout="true", stderr=""),  # git check
+            MagicMock(returncode=0),  # _detect_default_branch: rev-parse main
+            MagicMock(returncode=0, stdout=diff_text, stderr=""),  # git diff
         ]
         mock_client_cls.return_value.review.return_value = pass_api_response
 
@@ -286,28 +280,39 @@ class TestAutoMode:
         diff_text = (FIXTURES_DIR / "diff_simple.diff").read_text()
         mock_subproc.side_effect = [
             MagicMock(returncode=0, stdout=json.dumps(plan_json), stderr=""),
-            MagicMock(returncode=1, stdout="", stderr="unknown revision"),
-            MagicMock(returncode=0, stdout=diff_text, stderr=""),
+            MagicMock(returncode=0, stdout="true", stderr=""),  # git check
+            MagicMock(returncode=0),  # _detect_default_branch: rev-parse main
+            MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff main
+            MagicMock(returncode=0, stdout=diff_text, stderr=""),  # git diff origin/main
         ]
         mock_client_cls.return_value.review.return_value = pass_api_response
 
         result = runner.invoke(main, ["review", "--auto", "--quiet"])
         assert result.exit_code == 0
 
+    @patch("tfrev.cli.ReviewClient")
     @patch("tfrev.cli.subprocess.run")
     @patch("tfrev.cli.Path")
-    def test_both_git_diffs_fail(self, mock_path_cls, mock_subproc, runner):
+    def test_both_git_diffs_fail_falls_back(
+        self, mock_path_cls, mock_subproc, mock_client_cls, runner, pass_api_response
+    ):
+        """When both base and origin/base diffs fail, falls back to empty-tree diff."""
         mock_plan = MagicMock()
         mock_plan.exists.return_value = True
         mock_plan.__str__ = lambda self: "tfplan"
         mock_path_cls.return_value.glob.return_value = [mock_plan]
 
         plan_json = json.loads((FIXTURES_DIR / "plan_minimal.json").read_text())
+        diff_text = (FIXTURES_DIR / "diff_simple.diff").read_text()
         mock_subproc.side_effect = [
             MagicMock(returncode=0, stdout=json.dumps(plan_json), stderr=""),
-            MagicMock(returncode=1, stdout="", stderr="unknown revision"),
-            MagicMock(returncode=1, stdout="", stderr="unknown revision"),
+            MagicMock(returncode=0, stdout="true", stderr=""),  # git check
+            MagicMock(returncode=0),  # _detect_default_branch: rev-parse main
+            MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff main
+            MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff origin/main
+            MagicMock(returncode=0, stdout=diff_text, stderr=""),  # empty-tree fallback
         ]
+        mock_client_cls.return_value.review.return_value = pass_api_response
 
         result = runner.invoke(main, ["review", "--auto", "--quiet"])
-        assert result.exit_code == 2
+        assert result.exit_code == 0

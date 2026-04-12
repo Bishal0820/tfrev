@@ -84,7 +84,7 @@ For each resource_change:
 ```
 
 **Why JSON over human-readable plan:**
-The JSON format is deterministic, parseable, and includes metadata (like `after_unknown`) that the human-readable plan omits. It also avoids the fragile regex parsing needed for the pretty-printed output. We still accept the human-readable plan as a fallback via `--plan-text` for environments where JSON output is unavailable.
+The JSON format is deterministic, parseable, and includes metadata (like `after_unknown`) that the human-readable plan omits. It also avoids the fragile regex parsing needed for the pretty-printed output.
 
 #### 3.1.2 Git Diff Parser (`tfrev/diff_parser.py`)
 
@@ -152,8 +152,8 @@ The prompt builder constructs the full Claude prompt by assembling:
 
 The prompt builder also handles **context window management**:
 
-- If the combined input exceeds token limits, it prioritizes: (a) resource changes with actions != no-op, (b) diff hunks for changed files, (c) custom policies
-- Large plans are chunked by resource group, with a final synthesis pass
+- If the combined input exceeds token limits, context files are dropped first; if the plan + diff alone still exceed the limit, the review is rejected with an error
+- Each review is a single API call — there is no chunking or multi-pass synthesis
 
 #### 3.2.2 Claude API Client (`tfrev/client.py`)
 
@@ -242,9 +242,6 @@ tfrev review --plan plan.json
 
 # Diff against a specific ref (e.g. last deployed SHA or tag)
 tfrev review --plan plan.json --base-ref abc1234
-
-# With human-readable plan (fallback)
-tfrev review --plan-text plan.txt
 
 # Auto-detect plan file (runs in git repo with existing tfplan)
 tfrev review --auto
@@ -393,7 +390,7 @@ tfrev/
 ## 9. Roadmap
 
 ### v1.0.0 (current)
-- CLI with `--plan`, `--plan-text`, `--auto`, `--base-ref`
+- CLI with `--plan`, `--auto`, `--base-ref`
 - Auto-generated git diff (no manual `--diff` required)
 - Claude API integration with production prompt
 - JSON, Markdown, and Table output

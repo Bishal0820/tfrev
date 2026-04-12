@@ -8,7 +8,6 @@ from dataclasses import dataclass
 
 import anthropic
 import click
-import httpx
 
 from tfrev.config import TfrevConfig
 
@@ -39,7 +38,7 @@ class ReviewClient:
 
         self._client = anthropic.Anthropic(
             api_key=self._api_key,
-            timeout=httpx.Timeout(120.0, connect=10.0),
+            timeout=anthropic.Timeout(120.0, connect=10.0),
         )
 
     def review(self, system_prompt: str, user_prompt: str) -> APIResponse:
@@ -92,6 +91,12 @@ class ReviewClient:
             except anthropic.AuthenticationError as exc:
                 raise RuntimeError(
                     "Invalid ANTHROPIC_API_KEY. Check your key at https://console.anthropic.com/"
+                ) from exc
+
+            except anthropic.PermissionDeniedError as exc:
+                raise RuntimeError(
+                    "API key lacks required permissions. "
+                    "Check your key's workspace and permissions at https://console.anthropic.com/"
                 ) from exc
 
             except anthropic.APIError as e:

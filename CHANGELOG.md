@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+- Non-git directory support — `tfrev review` now scans local `.tf`/`.tfvars` files when not in a git repository
+- Default branch auto-detection — detects `main` vs `master` instead of hardcoding `main`
+- Resource-aware context discovery — uses plan resource addresses and module references to find relevant `.tf` files, not just root-level globs
+- Local module source resolution — follows relative `source` paths in module blocks to include module source files as context
+- `PermissionDeniedError` handling with actionable error message for insufficient API key permissions
+
+### Changed
+- Removed per-model context limit mapping — uses a single default context limit (200k tokens) that works with any model
+- Context window overflow now prompts the user to continue instead of hard-failing (default: abort)
+- Missing `--base-ref` now warns the user with an explanation of what it is and the fallback behavior, then asks to confirm before proceeding
+- Both-refs-fail scenario now falls back to empty-tree diff instead of exiting with an error
+- Development status classifier changed from `Production/Stable` to `Beta`
+- README sample output updated to use real AWS resource types instead of `null_resource`
+- README cost section clarified with typical cost range and single-call model
+- ARCHITECTURE.md corrected to accurately describe single-call model (no chunking)
+
+### Removed
+- `--plan-text` option — use `--plan` with JSON output from `terraform show -json` instead
+- `httpx` direct dependency — now uses `anthropic.Timeout` from the Anthropic SDK
+
 ## [1.0.1] - 2026-04-04
 
 ### Changed

@@ -210,15 +210,6 @@ class TestFormatPlanForPrompt:
         assert "[+]" in output
         assert "create" in output
 
-    def test_raw_text_passthrough(self):
-        plan = PlanSummary(
-            resource_changes=[],
-            terraform_version="1.7.0",
-            format_version="text",
-            raw_text="This is raw plan text",
-        )
-        assert format_plan_for_prompt(plan) == "This is raw plan text"
-
     def test_no_changes_message(self, empty_plan_json):
         plan = parse_plan_json(empty_plan_json)
         output = format_plan_for_prompt(plan)
