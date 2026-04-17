@@ -129,6 +129,7 @@ def discover_context_files(
     diff: DiffSummary,
     plan: PlanSummary,
     root: Path,
+    diff_base: Path | None = None,
 ) -> dict[str, str]:
     """Discover relevant .tf files in root that aren't already in the diff.
 
@@ -136,10 +137,15 @@ def discover_context_files(
     their modules, and related source directories. Falls back to root-level
     .tf files for basic context.
 
+    `diff_base` is the directory that diff paths are resolved against (typically
+    the git repo toplevel). Defaults to the current working directory for
+    backward compatibility.
+
     Returns a mapping of relative path → file contents.
     """
     # Paths already covered by the diff — skip them
-    diff_paths = {(Path.cwd() / f.path).resolve() for f in diff.files}
+    base = diff_base or Path.cwd()
+    diff_paths = {(base / f.path).resolve() for f in diff.files}
 
     # Index all .tf files under root
     tf_index = _index_tf_files(root)

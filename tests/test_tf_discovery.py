@@ -98,6 +98,27 @@ class TestDiscoverContextFiles:
         context = discover_context_files(diff, plan, tmp_path)
         assert len(context) == 0
 
+    def test_dedup_honors_diff_base(self, tmp_path, monkeypatch):
+        """Diff paths are relative to the repo root, not cwd.
+
+        When tfrev is run from a subdirectory of the repo, dedup must still
+        exclude files already covered by the diff.
+        """
+        (tmp_path / "main.tf").write_text('resource "aws_instance" "web" {}')
+        (tmp_path / "variables.tf").write_text('variable "region" {}')
+        subdir = tmp_path / "subdir"
+        subdir.mkdir()
+        monkeypatch.chdir(subdir)
+
+        diff = DiffSummary(files=[FileDiff(path="main.tf", status="modified")])
+        plan = PlanSummary(resource_changes=[], terraform_version="1.7.0", format_version="1.2")
+
+        context = discover_context_files(diff, plan, tmp_path, diff_base=tmp_path)
+
+        # main.tf is already in the diff — must not be re-included as context.
+        assert not any(p.endswith("main.tf") for p in context)
+        assert any("variables.tf" in p for p in context)
+
 
 class TestFormatContextForPrompt:
     def test_empty(self):

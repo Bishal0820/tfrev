@@ -49,6 +49,7 @@ class ReviewResult:
     unmapped_plan_changes: list[str] = field(default_factory=list)
     unmapped_code_changes: list[str] = field(default_factory=list)
     raw_response: str = ""  # Original response text
+    parse_failed: bool = False  # True if the response could not be parsed as JSON
 
 
 def parse_response(response_text: str) -> ReviewResult:
@@ -69,6 +70,7 @@ def parse_response(response_text: str) -> ReviewResult:
             confidence=0.3,
             summary="Could not parse structured response. Raw review follows.",
             raw_response=response_text,
+            parse_failed=True,
         )
 
     # Navigate to the review object
@@ -124,8 +126,14 @@ def parse_response(response_text: str) -> ReviewResult:
 
 def _extract_json(text: str) -> str:
     """Extract JSON from text that may contain markdown code fences or extra text."""
-    # Try: code fences
-    fence_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    # Prefer an explicitly ```json-tagged fence when one exists, since Claude may
+    # include other fenced blocks (hcl examples, etc.) alongside the JSON answer.
+    json_fence = re.search(r"```json\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if json_fence:
+        return json_fence.group(1).strip()
+
+    # Fall back to any fenced block.
+    fence_match = re.search(r"```\s*\n?(.*?)\n?```", text, re.DOTALL)
     if fence_match:
         return fence_match.group(1).strip()
 

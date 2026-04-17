@@ -77,7 +77,7 @@ def load_config(config_path: str | Path | None = None) -> TfrevConfig:
             return config  # Use defaults
         path = found
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     if not raw or not isinstance(raw, dict):
@@ -101,11 +101,16 @@ def load_config(config_path: str | Path | None = None) -> TfrevConfig:
 
     # Parse policies
     for policy_raw in raw.get("policies", []):
+        policy_name = policy_raw.get("name", "unnamed")
+        severity = _validate_severity(
+            policy_raw.get("severity", "medium"),
+            f"policy '{policy_name}' severity",
+        )
         config.policies.append(
             PolicyRule(
-                name=policy_raw.get("name", "unnamed"),
+                name=policy_name,
                 description=policy_raw.get("description", ""),
-                severity=policy_raw.get("severity", "medium"),
+                severity=severity,
                 threshold=policy_raw.get("threshold"),
                 required_tags=policy_raw.get("required_tags"),
             )

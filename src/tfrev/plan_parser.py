@@ -172,7 +172,7 @@ def load_plan_file(path: str | Path) -> PlanSummary:
     if not path.exists():
         raise FileNotFoundError(f"Plan file not found: {path}")
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         try:
             plan_json = json.load(f)
         except json.JSONDecodeError as e:
