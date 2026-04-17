@@ -27,6 +27,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `--plan-text` option — use `--plan` with JSON output from `terraform show -json` instead
 - `httpx` direct dependency — now uses `anthropic.Timeout` from the Anthropic SDK
 
+### Fixed
+- Exit code 2 (not 0) when Claude's response can't be parsed as structured JSON, so CI no longer silently passes on a broken review
+- `subprocess.TimeoutExpired` from `git diff` is caught on both the primary diff path and the empty-tree fallback, producing a clear error and exit 2 instead of a traceback
+- Context-file dedup now resolves diff paths against the git toplevel instead of `Path.cwd()`, preventing duplicate files when tfrev is run from a subdirectory of the repo
+- `--base-ref` confirmation prompt no longer fires in non-git directories (it was asking the user to confirm diffing against `main` with no git present)
+- Invalid severity values in `.tfrev.yaml` `policies[*].severity` are now rejected at load time instead of silently being treated as `info`
+- File reads in config/plan loaders now pin `encoding="utf-8"` for cross-platform safety
+- `_extract_json` prefers a ```` ```json ```` fenced block over any earlier fence, so a preceding `hcl` example in Claude's reply doesn't get parsed as JSON
+
 ## [1.0.1] - 2026-04-04
 
 ### Changed
