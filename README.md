@@ -71,8 +71,13 @@ Copy `ci/jenkins/Jenkinsfile` into your repo and add `ANTHROPIC_API_KEY` as a cr
 ```bash
 pip install tfrev
 export ANTHROPIC_API_KEY=$YOUR_SECRET
-tfrev review --auto --output markdown --fail-on high
+tfrev review --auto --output markdown --fail-on high --quiet
 ```
+
+> **Note:** Always pass `--quiet` in CI/CD. Without it, tfrev prompts for
+> interactive confirmation before sending the plan + diff to Claude and will
+> hang waiting for input on a non-interactive stdin. `--quiet` also suppresses
+> the `--base-ref` confirmation and the context-overflow prompt.
 
 ## Configuration
 

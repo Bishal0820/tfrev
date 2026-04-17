@@ -197,6 +197,22 @@ class TestLoadPlanFile:
         plan = load_plan_file(fixtures_dir / "plan_minimal.json")
         assert plan.creating == 1
 
+    def test_open_uses_utf8_encoding(self, fixtures_dir):
+        """Plan loads must pass encoding='utf-8' explicitly for cross-platform safety."""
+        from unittest.mock import patch
+
+        real_open = open
+        seen_kwargs: list[dict] = []
+
+        def tracking_open(*args, **kwargs):
+            seen_kwargs.append(kwargs)
+            return real_open(*args, **kwargs)
+
+        with patch("builtins.open", side_effect=tracking_open):
+            load_plan_file(fixtures_dir / "plan_minimal.json")
+
+        assert any(kw.get("encoding") == "utf-8" for kw in seen_kwargs)
+
 
 # --- format_plan_for_prompt ---
 

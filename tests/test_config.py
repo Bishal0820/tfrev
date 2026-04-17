@@ -94,6 +94,36 @@ class TestLoadConfig:
         assert config.fail_on == "critical"
         assert config.max_tokens == 4096  # default
 
+    def test_open_uses_utf8_encoding(self, tmp_path):
+        """Config loads must pass encoding='utf-8' explicitly for cross-platform safety."""
+        from unittest.mock import patch
+
+        config_file = tmp_path / ".tfrev.yaml"
+        config_file.write_text("model: claude-sonnet-4-6\n")
+
+        real_open = open
+        seen_kwargs: list[dict] = []
+
+        def tracking_open(*args, **kwargs):
+            seen_kwargs.append(kwargs)
+            return real_open(*args, **kwargs)
+
+        with patch("builtins.open", side_effect=tracking_open):
+            load_config(config_file)
+
+        assert any(kw.get("encoding") == "utf-8" for kw in seen_kwargs)
+
+    def test_policy_with_invalid_severity_rejected(self, tmp_path):
+        config_file = tmp_path / ".tfrev.yaml"
+        config_file.write_text(
+            "policies:\n"
+            "  - name: typo-policy\n"
+            "    description: has bad severity\n"
+            "    severity: hign\n"
+        )
+        with pytest.raises(ValueError, match="policy 'typo-policy'"):
+            load_config(config_file)
+
     def test_policy_parsing(self, full_config_path):
         config = load_config(full_config_path)
         blast = [p for p in config.policies if p.name == "blast-radius-limit"]

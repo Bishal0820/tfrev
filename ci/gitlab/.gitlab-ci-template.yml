@@ -60,6 +60,7 @@ tfrev_review:
         --model ${TFREV_MODEL} \
         --fail-on ${TFREV_FAIL_ON} \
         --severity-threshold ${TFREV_SEVERITY_THRESHOLD} \
+        --quiet \
         > review.md 2>review-log.txt || REVIEW_EXIT=$?
 
     # Post review as MR comment

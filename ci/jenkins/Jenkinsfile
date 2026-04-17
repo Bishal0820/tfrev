@@ -71,6 +71,7 @@ pipeline {
                                         --output json \\
                                         --model ${params.TFREV_MODEL} \\
                                         --fail-on ${params.TFREV_FAIL_ON} \\
+                                        --quiet \\
                                         > review.json 2>review-log.txt
 
                                 """,
@@ -82,6 +83,7 @@ pipeline {
                                 tfrev review \\
                                     --plan plan.json \\
                                     --output markdown \\
+                                    --quiet \\
                                     > review.md 2>/dev/null || true
                             """
 

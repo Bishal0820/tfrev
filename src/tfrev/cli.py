@@ -19,7 +19,7 @@ from tfrev.output import format_json, format_markdown, format_table
 from tfrev.plan_parser import PlanSummary, load_plan_file, parse_plan_json
 from tfrev.prompt import build_system_prompt, build_user_prompt, estimate_tokens
 from tfrev.response_parser import parse_response
-from tfrev.tf_discovery import discover_context_files, infer_root_dir
+from tfrev.tf_discovery import _MAX_FILE_BYTES, discover_context_files, infer_root_dir
 
 _DEFAULT_CONTEXT_LIMIT = 200_000
 
@@ -151,8 +151,20 @@ def review(
         click.echo("Error: Provide --plan or --auto", err=True)
         sys.exit(2)
 
+    # --- Skip Claude call when the plan has no infrastructure changes ---
+    if not plan.has_changes:
+        if not quiet:
+            click.echo(
+                "Plan shows no infrastructure changes (0 create / 0 update / "
+                "0 delete / 0 replace). Nothing to review.",
+                err=True,
+            )
+        sys.exit(0)
+
     # --- Generate diff ---
-    if not base_ref and not quiet:
+    # Only prompt about the base ref when we're actually in a git repo.
+    # In non-git directories, _generate_diff falls back to scanning all .tf files.
+    if not base_ref and not quiet and _is_inside_git_work_tree():
         default_branch = _detect_default_branch()
         click.echo(
             "No --base-ref provided. --base-ref is the previous commit, branch, or tag "
@@ -208,7 +220,8 @@ def review(
         if root:
             if not quiet:
                 click.echo(f"Scanning for context files in: {root}", err=True)
-            context_files = discover_context_files(diff, plan, root)
+            diff_base = _git_toplevel() or Path.cwd()
+            context_files = discover_context_files(diff, plan, root, diff_base=diff_base)
             if not quiet:
                 click.echo(f"Discovered {len(context_files)} additional source file(s):", err=True)
                 for ctx_path in sorted(context_files):
@@ -253,6 +266,13 @@ def review(
                 sys.exit(2)
 
     if not quiet:
+        if not click.confirm(
+            "Send plan + diff to Claude for review?",
+            default=True,
+            err=True,
+        ):
+            click.echo("Aborting.", err=True)
+            sys.exit(2)
         click.echo("Sending to Claude for review...", err=True)
 
     # --- Call Claude ---
@@ -277,6 +297,13 @@ def review(
 
     # --- Parse response ---
     result = parse_response(api_response.content)
+    if result.parse_failed:
+        click.echo(
+            "Error: Claude's response could not be parsed as structured JSON. Raw response:",
+            err=True,
+        )
+        click.echo(result.raw_response, err=True)
+        sys.exit(2)
 
     # --- Format output ---
     if output_format == "json":
@@ -338,6 +365,38 @@ def _auto_detect_plan(quiet: bool) -> PlanSummary:
 _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
+def _git_toplevel() -> Path | None:
+    """Return the git repo toplevel path, or None if not inside a git repo."""
+    try:
+        ret = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if ret.returncode == 0:
+            top = ret.stdout.strip()
+            if top:
+                return Path(top)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
+def _is_inside_git_work_tree() -> bool:
+    """Return True if the current directory is inside a git working tree."""
+    try:
+        ret = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return ret.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 def _detect_default_branch() -> str:
     """Detect the default branch (main or master), falling back to 'main'."""
     try:
@@ -372,7 +431,7 @@ def _scan_tf_files(directory: Path, quiet: bool) -> DiffSummary:
     files: list[FileDiff] = []
     for tf_path in tf_files:
         try:
-            if tf_path.stat().st_size > 20_000:
+            if tf_path.stat().st_size > _MAX_FILE_BYTES:
                 continue
             rel = str(tf_path.relative_to(directory))
             content = tf_path.read_text(encoding="utf-8", errors="replace")
@@ -475,6 +534,13 @@ def _generate_diff(base_ref: str | None, quiet: bool) -> DiffSummary:
     except FileNotFoundError:
         click.echo("Error: git not found. Is it installed and in PATH?", err=True)
         sys.exit(2)
+    except subprocess.TimeoutExpired:
+        click.echo(
+            "Error: git diff timed out. Try a smaller base ref range or "
+            "check for a hung git process.",
+            err=True,
+        )
+        sys.exit(2)
 
     diff = parse_diff(result.stdout)
 
@@ -496,6 +562,13 @@ def _generate_diff(base_ref: str | None, quiet: bool) -> DiffSummary:
                 diff = parse_diff(result.stdout)
         except FileNotFoundError:
             pass  # git already confirmed present above
+        except subprocess.TimeoutExpired:
+            click.echo(
+                "Error: git diff timed out. Try a smaller base ref range or "
+                "check for a hung git process.",
+                err=True,
+            )
+            sys.exit(2)
 
     return diff
 

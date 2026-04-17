@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `PermissionDeniedError` handling with actionable error message for insufficient API key permissions
 
 ### Changed
+- Skip the Claude API call and exit 0 when the plan shows no infrastructure changes (0 create / 0 update / 0 delete / 0 replace)
+- Prompt for confirmation before sending plan + diff to Claude (default: yes). Suppressed by `--quiet` for CI/automation use.
+- README "Any CI/CD" snippet updated to include `--quiet` with a note explaining why it is required in non-interactive environments
 - Removed per-model context limit mapping — uses a single default context limit (200k tokens) that works with any model
 - Context window overflow now prompts the user to continue instead of hard-failing (default: abort)
 - Missing `--base-ref` now warns the user with an explanation of what it is and the fallback behavior, then asks to confirm before proceeding
@@ -26,6 +29,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Removed
 - `--plan-text` option — use `--plan` with JSON output from `terraform show -json` instead
 - `httpx` direct dependency — now uses `anthropic.Timeout` from the Anthropic SDK
+
+### Fixed
+- Exit code 2 (not 0) when Claude's response can't be parsed as structured JSON, so CI no longer silently passes on a broken review
+- `subprocess.TimeoutExpired` from `git diff` is caught on both the primary diff path and the empty-tree fallback, producing a clear error and exit 2 instead of a traceback
+- Context-file dedup now resolves diff paths against the git toplevel instead of `Path.cwd()`, preventing duplicate files when tfrev is run from a subdirectory of the repo
+- `--base-ref` confirmation prompt no longer fires in non-git directories (it was asking the user to confirm diffing against `main` with no git present)
+- Invalid severity values in `.tfrev.yaml` `policies[*].severity` are now rejected at load time instead of silently being treated as `info`
+- File reads in config/plan loaders now pin `encoding="utf-8"` for cross-platform safety
+- `_extract_json` prefers a ```` ```json ```` fenced block over any earlier fence, so a preceding `hcl` example in Claude's reply doesn't get parsed as JSON
 
 ## [1.0.1] - 2026-04-04
 

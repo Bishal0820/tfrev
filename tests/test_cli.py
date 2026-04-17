@@ -168,8 +168,14 @@ class TestReviewCommand:
             main, ["review", "--plan", plan_file, "--base-ref", "abc1234", "--quiet"]
         )
         assert result.exit_code == 0
-        cmd = mock_git_diff.call_args[0][0]
-        assert "abc1234...HEAD" in cmd
+        # Find the git-diff call among all subprocess invocations.
+        diff_calls = [
+            call
+            for call in mock_git_diff.call_args_list
+            if len(call.args) > 0 and "diff" in call.args[0]
+        ]
+        assert diff_calls, "no git-diff call was made"
+        assert any("abc1234...HEAD" in call.args[0] for call in diff_calls)
 
     def test_runtime_error_from_client(self, runner, mock_git_diff):
         with patch("tfrev.cli.ReviewClient") as mock_client_cls:
@@ -184,12 +190,131 @@ class TestReviewCommand:
             result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
         assert result.exit_code == 2
 
+    def test_git_diff_timeout(self, runner, monkeypatch):
+        """A TimeoutExpired from git diff should exit 2 with a clean error, not a traceback."""
+        import subprocess as sp
+
+        # Pin the base-ref lookup so the test doesn't depend on CI env vars
+        # that would otherwise change which subprocess call the timeout hits.
+        for var in ("GITHUB_BASE_REF", "CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "CHANGE_TARGET"):
+            monkeypatch.delenv(var, raising=False)
+
+        git_check = MagicMock(returncode=0, stdout="true", stderr="")
+        detect_branch = MagicMock(returncode=0)
+
+        def side_effect(*args, **kwargs):
+            call = side_effect.calls
+            side_effect.calls += 1
+            if call == 0:
+                return git_check
+            if call == 1:
+                return detect_branch
+            raise sp.TimeoutExpired(cmd="git diff", timeout=30)
+
+        side_effect.calls = 0
+        with patch("tfrev.cli.subprocess.run", side_effect=side_effect):
+            plan_file = str(FIXTURES_DIR / "plan_minimal.json")
+            result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
+        assert result.exit_code == 2
+        assert "timed out" in result.output.lower() or "timeout" in result.output.lower()
+
+    def test_git_diff_timeout_in_empty_tree_fallback(self, runner, monkeypatch):
+        """Timeout during the empty-tree fallback must also exit 2 cleanly."""
+        import subprocess as sp
+
+        # Simulate CI: base ref comes from env, so no _detect_default_branch call.
+        monkeypatch.setenv("GITHUB_BASE_REF", "main")
+
+        git_check = MagicMock(returncode=0, stdout="true", stderr="")
+        empty_diff = MagicMock(returncode=0, stdout="", stderr="")
+
+        def side_effect(*args, **kwargs):
+            call = side_effect.calls
+            side_effect.calls += 1
+            if call == 0:
+                return git_check
+            if call == 1:
+                return empty_diff
+            raise sp.TimeoutExpired(cmd="git diff", timeout=30)
+
+        side_effect.calls = 0
+        with patch("tfrev.cli.subprocess.run", side_effect=side_effect):
+            plan_file = str(FIXTURES_DIR / "plan_minimal.json")
+            result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
+        assert result.exit_code == 2, result.output
+        assert "timed out" in result.output.lower() or "timeout" in result.output.lower()
+
     def test_git_diff_both_refs_fail(self, runner):
         fail = MagicMock(returncode=1, stdout="", stderr="unknown revision")
         with patch("tfrev.cli.subprocess.run", return_value=fail):
             plan_file = str(FIXTURES_DIR / "plan_minimal.json")
             result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
         assert result.exit_code == 2
+
+    @patch("tfrev.cli.ReviewClient")
+    def test_non_git_dir_skips_base_ref_prompt(self, mock_client_cls, runner, pass_api_response):
+        """In a non-git directory, no --base-ref prompt should fire."""
+        mock_client_cls.return_value.review.return_value = pass_api_response
+        plan_file = str(FIXTURES_DIR / "plan_minimal.json")
+
+        # Simulate `git rev-parse --is-inside-work-tree` returning non-zero,
+        # i.e., we are not inside a git repo.
+        not_git = MagicMock(returncode=128, stdout="", stderr="fatal: not a git repo")
+
+        with (
+            patch("tfrev.cli.subprocess.run", return_value=not_git),
+            runner.isolated_filesystem(),
+        ):
+            # No --quiet, no --base-ref. Supply "y" to accept the send confirmation.
+            result = runner.invoke(main, ["review", "--plan", plan_file], input="y\n")
+
+        # The base-ref prompt should not fire in a non-git dir.
+        assert "Continue?" not in result.output
+        assert "diff against" not in result.output
+        assert result.exit_code == 0, result.output
+
+    @patch("tfrev.cli.ReviewClient")
+    def test_malformed_response_exits_2(self, mock_client_cls, runner, mock_git_diff):
+        """Unparseable Claude response must not silently exit 0."""
+        bad_response = APIResponse(
+            content="not json at all",
+            model="claude-sonnet-4-6",
+            input_tokens=1,
+            output_tokens=1,
+            stop_reason="end_turn",
+        )
+        mock_client_cls.return_value.review.return_value = bad_response
+        plan_file = str(FIXTURES_DIR / "plan_minimal.json")
+
+        result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
+        assert result.exit_code == 2
+
+    @patch("tfrev.cli.ReviewClient")
+    def test_send_confirmation_declined_skips_claude(
+        self, mock_client_cls, runner, pass_api_response, mock_git_diff
+    ):
+        """Answering 'n' to the send confirmation exits 2 without calling Claude."""
+        mock_client_cls.return_value.review.return_value = pass_api_response
+        plan_file = str(FIXTURES_DIR / "plan_minimal.json")
+
+        # No --quiet: the send-confirmation prompt fires. Answer 'n'.
+        # Also supply 'y' for the base-ref prompt that precedes it.
+        result = runner.invoke(
+            main,
+            ["review", "--plan", plan_file, "--base-ref", "HEAD~1"],
+            input="n\n",
+        )
+        assert result.exit_code == 2
+        mock_client_cls.return_value.review.assert_not_called()
+
+    @patch("tfrev.cli.ReviewClient")
+    def test_no_plan_changes_skips_claude(self, mock_client_cls, runner):
+        """When the plan has zero changes, tfrev exits 0 without calling Claude."""
+        plan_file = str(FIXTURES_DIR / "plan_empty.json")
+        result = runner.invoke(main, ["review", "--plan", plan_file])
+        assert result.exit_code == 0
+        mock_client_cls.return_value.review.assert_not_called()
+        assert "no infrastructure changes" in result.output.lower()
 
     @patch("tfrev.cli.ReviewClient")
     def test_empty_diff_falls_back_to_full_state(self, mock_client_cls, runner, pass_api_response):
@@ -201,7 +326,8 @@ class TestReviewCommand:
         empty = MagicMock(returncode=0, stdout="", stderr="")
         full_state = MagicMock(returncode=0, stdout=diff_text, stderr="")
 
-        side_effects = [git_check, detect_branch, empty, full_state]
+        toplevel = MagicMock(returncode=0, stdout="/tmp\n", stderr="")
+        side_effects = [git_check, detect_branch, empty, full_state, toplevel]
         with patch("tfrev.cli.subprocess.run", side_effect=side_effects):
             plan_file = str(FIXTURES_DIR / "plan_minimal.json")
             result = runner.invoke(main, ["review", "--plan", plan_file, "--quiet"])
@@ -259,6 +385,7 @@ class TestAutoMode:
             MagicMock(returncode=0, stdout="true", stderr=""),  # git check
             MagicMock(returncode=0),  # _detect_default_branch: rev-parse main
             MagicMock(returncode=0, stdout=diff_text, stderr=""),  # git diff
+            MagicMock(returncode=0, stdout="/tmp\n", stderr=""),  # git toplevel
         ]
         mock_client_cls.return_value.review.return_value = pass_api_response
 
@@ -285,6 +412,7 @@ class TestAutoMode:
             MagicMock(returncode=0),  # _detect_default_branch: rev-parse main
             MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff main
             MagicMock(returncode=0, stdout=diff_text, stderr=""),  # git diff origin/main
+            MagicMock(returncode=0, stdout="/tmp\n", stderr=""),  # git toplevel
         ]
         mock_client_cls.return_value.review.return_value = pass_api_response
 
@@ -312,6 +440,7 @@ class TestAutoMode:
             MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff main
             MagicMock(returncode=1, stdout="", stderr="unknown revision"),  # git diff origin/main
             MagicMock(returncode=0, stdout=diff_text, stderr=""),  # empty-tree fallback
+            MagicMock(returncode=0, stdout="/tmp\n", stderr=""),  # git toplevel
         ]
         mock_client_cls.return_value.review.return_value = pass_api_response
 

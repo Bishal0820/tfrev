@@ -112,7 +112,7 @@ runs:
         set +e
 
         # Single API call — always capture JSON for structured data
-        REVIEW_JSON=$(tfrev review ${{ steps.prepare.outputs.args }} --output json 2>/tmp/tfrev-stderr.txt)
+        REVIEW_JSON=$(tfrev review ${{ steps.prepare.outputs.args }} --output json --quiet 2>/tmp/tfrev-stderr.txt)
         EXIT_CODE=$?
 
         # Extract verdict and findings count

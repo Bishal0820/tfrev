@@ -62,6 +62,14 @@ class TestParseResponse:
         assert "Could not parse" in result.summary
         assert result.raw_response == malformed_response_text
 
+    def test_malformed_response_flags_parse_failed(self, malformed_response_text):
+        result = parse_response(malformed_response_text)
+        assert result.parse_failed is True
+
+    def test_valid_response_does_not_flag_parse_failed(self, pass_response_text):
+        result = parse_response(pass_response_text)
+        assert result.parse_failed is False
+
     def test_flat_format(self):
         """Test response without the 'review' wrapper."""
         flat = json.dumps(
@@ -116,3 +124,18 @@ class TestExtractJson:
         text = '{"msg": "a {nested} brace"}'
         extracted = _extract_json(text)
         assert json.loads(extracted) == {"msg": "a {nested} brace"}
+
+    def test_prefers_json_tagged_fence_over_earlier_fence(self):
+        """When multiple fenced blocks exist, prefer the ```json one."""
+        text = (
+            "Here's a code example:\n"
+            "```hcl\n"
+            'resource "aws_s3_bucket" "b" {}\n'
+            "```\n"
+            "And the review output:\n"
+            "```json\n"
+            '{"verdict": "PASS"}\n'
+            "```\n"
+        )
+        extracted = _extract_json(text)
+        assert json.loads(extracted) == {"verdict": "PASS"}
