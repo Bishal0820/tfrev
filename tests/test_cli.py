@@ -290,6 +290,15 @@ class TestReviewCommand:
         assert result.exit_code == 2
 
     @patch("tfrev.cli.ReviewClient")
+    def test_no_plan_changes_skips_claude(self, mock_client_cls, runner):
+        """When the plan has zero changes, tfrev exits 0 without calling Claude."""
+        plan_file = str(FIXTURES_DIR / "plan_empty.json")
+        result = runner.invoke(main, ["review", "--plan", plan_file])
+        assert result.exit_code == 0
+        mock_client_cls.return_value.review.assert_not_called()
+        assert "no infrastructure changes" in result.output.lower()
+
+    @patch("tfrev.cli.ReviewClient")
     def test_empty_diff_falls_back_to_full_state(self, mock_client_cls, runner, pass_api_response):
         """When base ref diff is empty, falls back to diffing against the empty tree."""
         mock_client_cls.return_value.review.return_value = pass_api_response

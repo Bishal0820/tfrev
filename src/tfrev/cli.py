@@ -151,6 +151,16 @@ def review(
         click.echo("Error: Provide --plan or --auto", err=True)
         sys.exit(2)
 
+    # --- Skip Claude call when the plan has no infrastructure changes ---
+    if not plan.has_changes:
+        if not quiet:
+            click.echo(
+                "Plan shows no infrastructure changes (0 create / 0 update / "
+                "0 delete / 0 replace). Nothing to review.",
+                err=True,
+            )
+        sys.exit(0)
+
     # --- Generate diff ---
     # Only prompt about the base ref when we're actually in a git repo.
     # In non-git directories, _generate_diff falls back to scanning all .tf files.
